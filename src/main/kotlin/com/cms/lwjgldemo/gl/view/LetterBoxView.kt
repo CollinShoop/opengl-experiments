@@ -1,6 +1,7 @@
 package com.cms.lwjgldemo.gl.view
 
 import java.awt.geom.Point2D
+import java.awt.geom.Rectangle2D
 
 /**
  * Calculates a letterbox rendered view translation and scaling of a virtual coordinate system
@@ -44,6 +45,18 @@ data class LetterBoxView(val virtualWidth: Float, val virtualHeight: Float) {
     private var marginYPx: Float = 0.0f
 
     /**
+     * Scale from virtual to projection in the X axis
+     */
+    var virtualScaleX: Float = 1.0f
+        private set
+
+    /**
+     * Scale from virtual to projection in the Y axis
+     */
+    var virtualScaleY: Float = 1.0f
+        private set
+
+    /**
      * Update the buffer size. This is expected to happen whenever the screen is resized.
      *
      * @param width of the entire graphics buffer in pixels
@@ -74,6 +87,23 @@ data class LetterBoxView(val virtualWidth: Float, val virtualHeight: Float) {
             viewHeightPx = bufferWidth / targetAspectRatio
             marginYPx = (bufferHeight - viewHeightPx) / 2f
         }
+
+        virtualScaleX = calcVirtualScaleX()
+        virtualScaleY = calcVirtualScaleY()
+    }
+
+    /**
+     * Calculates virtualScaleX
+     */
+    private fun calcVirtualScaleX(): Float {
+        return (1f / virtualWidth)*(viewWidthPx/(bufferWidth-getProjectionMarginX()))
+    }
+
+    /**
+     * Calculates virtualScaleY
+     */
+    private fun calcVirtualScaleY(): Float {
+        return (1f / virtualHeight)*(viewHeightPx/(bufferHeight-getProjectionMarginY()))
     }
 
     fun getProjectionMarginX(): Float {
@@ -89,9 +119,19 @@ data class LetterBoxView(val virtualWidth: Float, val virtualHeight: Float) {
      */
     fun projectVirtualPoint(x: Float, y: Float): Point2D.Float {
         return Point2D.Float(
-            getProjectionMarginX() + (x / virtualWidth)*(viewWidthPx/(bufferWidth-getProjectionMarginX())),
-            getProjectionMarginY() + (y / virtualHeight)*(viewHeightPx/(bufferHeight-getProjectionMarginY()))
+            getProjectionMarginX() + (x * virtualScaleX),
+            getProjectionMarginY() + (y * virtualScaleY)
         )
+    }
+
+    /**
+     * Project a rectangle from virtual space to projection space.
+     *
+     * Similar to [projectVirtualPoint] but the width and height are scaled as well.
+     */
+    fun projectVirtualRect(rect: Rectangle2D.Float): Rectangle2D.Float {
+        val point = projectVirtualPoint(rect.x, rect.y)
+        return Rectangle2D.Float(point.x, point.y, rect.width*virtualScaleX, rect.height*virtualScaleY)
     }
 
     /**
