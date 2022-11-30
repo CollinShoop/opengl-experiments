@@ -6,6 +6,7 @@ import org.lwjgl.stb.STBImage
 import org.lwjgl.stb.STBImage.stbi_load_from_memory
 import org.lwjgl.system.MemoryStack
 import java.awt.geom.Point2D
+import java.awt.geom.Rectangle2D
 import java.nio.ByteBuffer
 import kotlin.math.roundToInt
 
@@ -20,7 +21,7 @@ class Texture(private var assetName: String) {
     private var image: ByteBuffer? = null
     private var comp = 0
 
-    fun renderAt(point: Point2D.Float, scaleX: Float, scaleY: Float) {
+    fun render(rect: Rectangle2D.Float) {
         // enable texture mapping
         glEnable(GL_TEXTURE_2D)
 
@@ -29,8 +30,8 @@ class Texture(private var assetName: String) {
 
         // apply a translation / scale matrix for this texture
         glPushMatrix()
-        glTranslatef(point.x, point.y, 0.0f)
-        glScalef(scaleX, scaleY, 1f)
+        glTranslatef(rect.x, rect.y, 0.0f)
+        glScalef(rect.width/w, rect.height/h, 1f)
 
         // no explicit color
         glColor4f(1f, 1f, 1f, 1f)

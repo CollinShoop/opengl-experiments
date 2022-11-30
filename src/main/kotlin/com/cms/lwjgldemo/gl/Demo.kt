@@ -10,6 +10,7 @@ import org.lwjgl.opengl.GLUtil
 import org.lwjgl.system.Callback
 import org.lwjgl.system.MemoryStack
 import org.lwjgl.system.MemoryUtil
+import java.awt.geom.Rectangle2D
 
 
 class Demo {
@@ -192,6 +193,9 @@ class Demo {
     }
 
     private fun render() {
+        // calculate the position of the mouse in virtual space
+        val mouseMappedToVirtual = boxView.projectScreenPointToVirtual(mouseXPos, mouseYPos)
+
         // clear the framebuffer
         glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
 
@@ -204,45 +208,107 @@ class Demo {
         glLoadIdentity()
         glOrtho(0.0, 1.0, 1.0, 0.0, -1.0, 1.0)
 
-        // fill the view background
-        glColor3d(0.0, 1.0, 0.0) // background color
         val marginX = boxView.getProjectionMarginX()
         val marginY = boxView.getProjectionMarginY()
+        glColorBackground()
         glRectf(marginX, marginY, 1-marginX, 1-marginY)
 
-        // debug lines
+        // highlight the grid cell with the mouse hovered
+        val gridSize = (width / 16).toInt()
+        val highlightGridX = (mouseMappedToVirtual.x / gridSize).toInt() * gridSize
+        val highlightGridY = (mouseMappedToVirtual.y / gridSize).toInt() * gridSize
+        // draw grid highlight only if it's within virtual view
+        if (highlightGridX >= 0 && highlightGridX < width && highlightGridY >= 0 && highlightGridY < height) {
+            glColorBackgroundHighlight()
+            glRectV(highlightGridX, highlightGridY, gridSize, gridSize)
+        }
+
+        // background grid
+        glColorGridLines()
         glBegin(GL_LINES)
-        glColor3d(0.0, 0.0, 1.0) // blue
+            for (x in gridSize..width.toInt()-gridSize step gridSize) {
+                glVertexV(x, 0)
+                glVertexV(x, height)
+            }
+            for (y in gridSize..height.toInt()-gridSize step gridSize) {
+                glVertexV(0, y)
+                glVertexV(width, y)
+            }
+        glEnd()
 
-        fun glVertexV(x: Float, y: Float) {
-            val mapped = boxView.projectVirtualPoint(x, y)
-            glVertex2f(mapped.x, mapped.y)
-        }
-        fun glVertexS(x: Float, y: Float) {
-            val mapped = boxView.projectScreenPoint(x, y)
-            glVertex2f(mapped.x, mapped.y)
-        }
+        // center and mouse lines
+        glBegin(GL_LINES)
+            glColorLines()
+            glVertexV(0f, 0f)
+            glVertexV(width/2, height/2)
 
-        glVertexV(0f, 0f)
-        glVertexV(width/2, height/2)
+            // draw line to mouse in view space
+            glVertexS(0f, 0f)
+            glVertexS(mouseXPos, mouseYPos)
 
-        // draw line to mouse in projected space
-        glVertexS(0f, 0f)
-        glVertexS(mouseXPos, mouseYPos)
+            // draw a line from the origin to mouse location in virtual space
+            glVertexV(0f, 0f)
+            glVertexV(mouseMappedToVirtual.x, mouseMappedToVirtual.y)
 
-        // draw line to mouse in virtual space
-        val mouseMappedToVirtual = boxView.projectScreenPointToVirtual(mouseXPos, mouseYPos)
-        // then project that back
-        glVertexV(0f, 0f)
-        glVertexV(mouseMappedToVirtual.x, mouseMappedToVirtual.y)
-
+            // draw a box around the mouse where the cursor should go
+            val cursorBox = boxView.projectVirtualRect(Rectangle2D.Float(mouseMappedToVirtual.x-cursorTexture.w, mouseMappedToVirtual.y-cursorTexture.h, cursorTexture.w*2, cursorTexture.h*2))
+            glBox(cursorBox)
         glEnd()
 
         // draw cursor texture
-        cursorTexture.renderAt(boxView.projectVirtualPoint(mouseMappedToVirtual.x, mouseMappedToVirtual.y), 1f/boxView.bufferWidth, 1f/boxView.bufferHeight)
+        cursorTexture.render(cursorBox)
 
         // show the latest drawing
         GLFW.glfwSwapBuffers(window)
+    }
+
+    /*
+        COLORS
+     */
+    private fun glColorBackground() {
+        glColor3d(0.0, 1.0, 0.0)
+    }
+    private fun glColorBackgroundHighlight() {
+        glColor3d(0.3, 0.5, 0.3)
+    }
+    private fun glColorLines() {
+        glColor3d(0.0, 0.0, 1.0)
+    }
+    private fun glColorGridLines() {
+        glColor3d(0.0, 0.0, 0.0)
+    }
+
+    /*
+        GL Drawing Helpers
+     */
+    private fun glBox(rect: Rectangle2D.Float) {
+        glVertex2f(rect.x, rect.y)
+
+        glVertex2f(rect.x+rect.width, rect.y)
+        glVertex2f(rect.x+rect.width, rect.y)
+
+        glVertex2f(rect.x+rect.width, rect.y+rect.height)
+        glVertex2f(rect.x+rect.width, rect.y+rect.height)
+
+        glVertex2f(rect.x, rect.y+rect.height)
+        glVertex2f(rect.x, rect.y+rect.height)
+
+        glVertex2f(rect.x, rect.y)
+    }
+
+    private fun glRectV(x: Number, y: Number, width: Number, height: Number) {
+        val mapped = boxView.projectVirtualPoint(x.toFloat(), y.toFloat())
+        glRectf(mapped.x, mapped.y, mapped.x + width.toFloat() * boxView.virtualScaleX, mapped.y + height.toFloat() * boxView.virtualScaleY)
+    }
+
+    private fun glVertexV(x: Number, y: Number) {
+        val mapped = boxView.projectVirtualPoint(x.toFloat(), y.toFloat())
+        glVertex2f(mapped.x, mapped.y)
+    }
+
+    private fun glVertexS(x: Float, y: Float) {
+        val mapped = boxView.projectScreenPoint(x, y)
+        glVertex2f(mapped.x, mapped.y)
     }
 
     private fun destroy() {
