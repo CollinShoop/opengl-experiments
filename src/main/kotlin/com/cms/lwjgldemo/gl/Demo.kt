@@ -29,7 +29,8 @@ class Demo {
 
     private var boxView = LetterBoxView(this.width, this.height)
 
-    private var cursorTexture = Texture("red.png")
+    private var textCursor = Texture("red.png")
+    private var textBg = Texture("background.png")
 
     fun run() {
         println("Hello LWJGL " + Version.getVersion() + "!")
@@ -174,9 +175,10 @@ class Demo {
         // prepare drawing
 
         // load resources
-        cursorTexture.load()
+        textCursor.load()
+        textBg.load()
 
-        glClearColor(1.0f, 1.0f, 0.0f, 0.0f)
+        glClearColor(0f, 0f, 0f, 0f)
 
         // Run the rendering loop until the user has attempted to close
         // the window or has pressed the ESCAPE key.
@@ -189,7 +191,8 @@ class Demo {
         }
 
         // cleanup
-        cursorTexture.cleanup()
+        textCursor.cleanup()
+        textBg.cleanup()
     }
 
     private fun render() {
@@ -212,9 +215,11 @@ class Demo {
         val marginY = boxView.getProjectionMarginY()
         glColorBackground()
         glRectf(marginX, marginY, 1-marginX, 1-marginY)
+        // draw background texture
+        textBg.render(boxView.projectVirtualRect(Rectangle2D.Float(0f, 0f, width, height)))
 
         // highlight the grid cell with the mouse hovered
-        val gridSize = (width / 16).toInt()
+        val gridSize = (width / 32).toInt()
         val highlightGridX = (mouseMappedToVirtual.x / gridSize).toInt() * gridSize
         val highlightGridY = (mouseMappedToVirtual.y / gridSize).toInt() * gridSize
         // draw grid highlight only if it's within virtual view
@@ -251,12 +256,12 @@ class Demo {
             glVertexV(mouseMappedToVirtual.x, mouseMappedToVirtual.y)
 
             // draw a box around the mouse where the cursor should go
-            val cursorBox = boxView.projectVirtualRect(Rectangle2D.Float(mouseMappedToVirtual.x-cursorTexture.w, mouseMappedToVirtual.y-cursorTexture.h, cursorTexture.w*2, cursorTexture.h*2))
+            val cursorBox = boxView.projectVirtualRect(Rectangle2D.Float(mouseMappedToVirtual.x-textCursor.w, mouseMappedToVirtual.y-textCursor.h, textCursor.w*2, textCursor.h*2))
             glBox(cursorBox)
         glEnd()
 
         // draw cursor texture
-        cursorTexture.render(cursorBox)
+        textCursor.render(cursorBox)
 
         // show the latest drawing
         GLFW.glfwSwapBuffers(window)
@@ -272,10 +277,10 @@ class Demo {
         glColor3d(0.3, 0.5, 0.3)
     }
     private fun glColorLines() {
-        glColor3d(0.0, 0.0, 1.0)
+        glColor4d(1.0, 1.0, 1.0, 0.5)
     }
     private fun glColorGridLines() {
-        glColor3d(0.0, 0.0, 0.0)
+        glColor4d(0.0, 0.0, 0.0, 0.5)
     }
 
     /*
