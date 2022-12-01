@@ -4,6 +4,7 @@ import com.cms.lwjgldemo.gl.textures.Texture
 import com.cms.lwjgldemo.gl.view.LetterBoxView
 import org.lwjgl.Version
 import org.lwjgl.glfw.*
+import org.lwjgl.opengl.ARBFramebufferObject.*
 import org.lwjgl.opengl.GL
 import org.lwjgl.opengl.GL11.*
 import org.lwjgl.opengl.GLUtil
@@ -32,6 +33,15 @@ class Demo {
     private var textCursor = Texture("red.png")
     private var textBg = Texture("background.png")
 
+    // Multisampled framebuffer to do anti-aliasing
+    // See https://github.com/LWJGL/lwjgl3-demos/blob/main/src/org/lwjgl/demo/opengl/fbo/MultisampledFboDemo.java
+    private var useMultisampledFBO = true
+    private var colorRenderBuffer = 0
+    private var depthRenderBuffer = 0
+    private var fboId = 0
+    private var samples = 8
+    private var resetFrameBuffer = false
+
     fun run() {
         println("Hello LWJGL " + Version.getVersion() + "!")
         try {
@@ -40,7 +50,7 @@ class Demo {
         } finally {
             try {
                 destroy()
-            } catch(e: Exception) {
+            } catch (e: Exception) {
                 e.printStackTrace()
             }
         }
@@ -58,11 +68,11 @@ class Demo {
         GLFW.glfwDefaultWindowHints() // optional, the current window hints are already the default
         GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE, GLFW.GLFW_FALSE) // the window will stay hidden after creation
         GLFW.glfwWindowHint(GLFW.GLFW_RESIZABLE, GLFW.GLFW_TRUE) // the window will be resizable
-        GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR, 2)
+        GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR, 3)
         GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR, 1)
 
         // Create the window
-        window = GLFW.glfwCreateWindow(500, 500, "Hello World!", MemoryUtil.NULL, MemoryUtil.NULL)
+        window = GLFW.glfwCreateWindow(500, 500, "LWJGL Demo", MemoryUtil.NULL, MemoryUtil.NULL)
         if (window == MemoryUtil.NULL) throw RuntimeException("Failed to create the GLFW window")
 
         // Setup a key callback. It will be called every time a key is pressed, repeated or released.
@@ -109,6 +119,8 @@ class Demo {
         // bindings available for use.
         GL.createCapabilities()
 
+        debugCapabilities()
+
         // Keep track of debug callback
         debugProc = GLUtil.setupDebugMessageCallback()
 
@@ -137,12 +149,32 @@ class Demo {
 
     private fun windowSizeChanged(window: Long, width: Int, height: Int) {
         println("Window size changed to ${width},${height}")
+        resetFrameBuffer = true
+        boxView.setBufferSize(width.toFloat(), height.toFloat())
     }
 
     private fun framebufferSizeChanged(window: Long, width: Int, height: Int) {
         println("Frame buffer size changed to ${width},${height}")
-        glViewport(0, 0, width, height)
+        resetFrameBuffer = true
         boxView.setBufferSize(width.toFloat(), height.toFloat())
+    }
+
+    private fun debugCapabilities() {
+        if(GL.getCapabilities().OpenGL20) {
+            println("OpenGL 20 is supported")
+        }
+        if(GL.getCapabilities().OpenGL30) {
+            println("OpenGL 30 is supported")
+        }
+        if(GL.getCapabilities().OpenGL33) {
+            println("OpenGL 33 is supported")
+        }
+        if(GL.getCapabilities().OpenGL40) {
+            println("OpenGL 40 is supported")
+        }
+        if(GL.getCapabilities().OpenGL46) {
+            println("OpenGL 46 is supported")
+        }
     }
 
     /**
@@ -171,6 +203,39 @@ class Demo {
         }
     }
 
+    fun createFramebufferObject() {
+        if (!useMultisampledFBO) {
+            return
+        }
+        val width: Int = boxView.bufferWidth.toInt()
+        val height: Int = boxView.bufferHeight.toInt()
+        colorRenderBuffer = glGenRenderbuffers()
+        depthRenderBuffer = glGenRenderbuffers()
+        fboId = glGenFramebuffers()
+        glBindFramebuffer(GL_FRAMEBUFFER, fboId)
+        glBindRenderbuffer(GL_RENDERBUFFER, colorRenderBuffer)
+        glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_RGBA8, width, height)
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, colorRenderBuffer)
+        glBindRenderbuffer(GL_RENDERBUFFER, depthRenderBuffer)
+        glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_DEPTH24_STENCIL8, width, height)
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthRenderBuffer)
+        val fboStatus: Int = glCheckFramebufferStatus(GL_FRAMEBUFFER)
+        if (fboStatus != GL_FRAMEBUFFER_COMPLETE) {
+            throw AssertionError("Could not create FBO: $fboStatus")
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER, 0)
+    }
+
+    fun resizeFramebufferTexture() {
+        if (!useMultisampledFBO) {
+            return
+        }
+        glDeleteRenderbuffers(depthRenderBuffer)
+        glDeleteRenderbuffers(colorRenderBuffer)
+        glDeleteFramebuffers(fboId)
+        createFramebufferObject()
+    }
+
     private fun loop() {
         // prepare drawing
 
@@ -180,9 +245,21 @@ class Demo {
 
         glClearColor(0f, 0f, 0f, 0f)
 
+        // max sampling debug
+        samples = glGetInteger(GL_MAX_SAMPLES);
+        System.err.println("Using " + samples + "x multisampling")
+
+        /* Initially create the FBO with color texture and renderbuffer */
+        createFramebufferObject()
+
         // Run the rendering loop until the user has attempted to close
         // the window or has pressed the ESCAPE key.
         while (!GLFW.glfwWindowShouldClose(window)) {
+            if (resetFrameBuffer) {
+                resizeFramebufferTexture()
+                resetFrameBuffer = false
+            }
+
             // Poll for window events. The key callback above will only be
             // invoked during this call.
             GLFW.glfwPollEvents()
@@ -199,6 +276,11 @@ class Demo {
         // calculate the position of the mouse in virtual space
         val mouseMappedToVirtual = boxView.projectScreenPointToVirtual(mouseXPos, mouseYPos)
 
+        // render to custom frame buffer
+        if (useMultisampledFBO) {
+            glBindFramebuffer(GL_FRAMEBUFFER, fboId);
+        }
+
         // clear the framebuffer
         glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
 
@@ -208,13 +290,15 @@ class Demo {
 
         // unit top-down orthographic projection
         glMatrixMode(GL_PROJECTION)
+        glViewport(0, 0, boxView.bufferWidth.toInt(), boxView.bufferHeight.toInt())
         glLoadIdentity()
         glOrtho(0.0, 1.0, 1.0, 0.0, -1.0, 1.0)
 
         val marginX = boxView.getProjectionMarginX()
         val marginY = boxView.getProjectionMarginY()
         glColorBackground()
-        glRectf(marginX, marginY, 1-marginX, 1-marginY)
+        glRectf(marginX, marginY, 1 - marginX, 1 - marginY)
+
         // draw background texture
         textBg.render(boxView.projectVirtualRect(Rectangle2D.Float(0f, 0f, width, height)))
 
@@ -245,7 +329,7 @@ class Demo {
         glBegin(GL_LINES)
             glColorLines()
             glVertexV(0f, 0f)
-            glVertexV(width/2, height/2)
+            glVertexV(width / 2, height / 2)
 
             // draw line to mouse in view space
             glVertexS(0f, 0f)
@@ -256,12 +340,30 @@ class Demo {
             glVertexV(mouseMappedToVirtual.x, mouseMappedToVirtual.y)
 
             // draw a box around the mouse where the cursor should go
-            val cursorBox = boxView.projectVirtualRect(Rectangle2D.Float(mouseMappedToVirtual.x-textCursor.w, mouseMappedToVirtual.y-textCursor.h, textCursor.w*2, textCursor.h*2))
+            val cursorBox = boxView.projectVirtualRect(
+                Rectangle2D.Float(
+                    mouseMappedToVirtual.x - textCursor.w,
+                    mouseMappedToVirtual.y - textCursor.h,
+                    textCursor.w * 2,
+                    textCursor.h * 2
+                )
+            )
             glBox(cursorBox)
         glEnd()
 
         // draw cursor texture
         textCursor.render(cursorBox)
+
+        if (useMultisampledFBO) {
+            // write to default frame buffer
+            glBindFramebuffer(GL_FRAMEBUFFER, 0)
+            // setup blit to read from custom frame buffer
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, fboId)
+
+            val width: Int = boxView.bufferWidth.toInt()
+            val height: Int = boxView.bufferHeight.toInt()
+            glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST)
+        }
 
         // show the latest drawing
         GLFW.glfwSwapBuffers(window)
@@ -289,21 +391,26 @@ class Demo {
     private fun glBox(rect: Rectangle2D.Float) {
         glVertex2f(rect.x, rect.y)
 
-        glVertex2f(rect.x+rect.width, rect.y)
-        glVertex2f(rect.x+rect.width, rect.y)
+        glVertex2f(rect.x + rect.width, rect.y)
+        glVertex2f(rect.x + rect.width, rect.y)
 
-        glVertex2f(rect.x+rect.width, rect.y+rect.height)
-        glVertex2f(rect.x+rect.width, rect.y+rect.height)
+        glVertex2f(rect.x + rect.width, rect.y + rect.height)
+        glVertex2f(rect.x + rect.width, rect.y + rect.height)
 
-        glVertex2f(rect.x, rect.y+rect.height)
-        glVertex2f(rect.x, rect.y+rect.height)
+        glVertex2f(rect.x, rect.y + rect.height)
+        glVertex2f(rect.x, rect.y + rect.height)
 
         glVertex2f(rect.x, rect.y)
     }
 
     private fun glRectV(x: Number, y: Number, width: Number, height: Number) {
         val mapped = boxView.projectVirtualPoint(x.toFloat(), y.toFloat())
-        glRectf(mapped.x, mapped.y, mapped.x + width.toFloat() * boxView.virtualScaleX, mapped.y + height.toFloat() * boxView.virtualScaleY)
+        glRectf(
+            mapped.x,
+            mapped.y,
+            mapped.x + width.toFloat() * boxView.virtualScaleX,
+            mapped.y + height.toFloat() * boxView.virtualScaleY
+        )
     }
 
     private fun glVertexV(x: Number, y: Number) {
@@ -324,6 +431,7 @@ class Demo {
         // Free the window callbacks and destroy the window
         Callbacks.glfwFreeCallbacks(window)
         GLFW.glfwDestroyWindow(window)
+
         // Terminate GLFW and free the error callback
         GLFW.glfwTerminate()
         GLFW.glfwSetErrorCallback(null)!!.free()
